@@ -64,13 +64,11 @@ TAVILY_API_KEY=your_tavily_api_key_here
 
 *Note: If no Tavily key is supplied, the agent automatically utilizes built-in multi-source search fallback engines.*
 
-### 4. Running Locally
+### 4. Site link
 Start the development server:
-```bash
-npm run dev
-```
 
-Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+Open (https://research-l9k7kmtvv-arth21.vercel.app/) in your browser.
 
 ---
 
