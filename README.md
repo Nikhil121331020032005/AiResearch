@@ -65,7 +65,7 @@ TAVILY_API_KEY=your_tavily_api_key_here
 *Note: If no Tavily key is supplied, the agent automatically utilizes built-in multi-source search fallback engines.*
 
 ### 4. Site link
-Start the development server:
+Start the deployed server:
 
 
 Open (https://research-l9k7kmtvv-arth21.vercel.app/) in your browser.
