@@ -68,7 +68,7 @@ TAVILY_API_KEY=your_tavily_api_key_here
 Start the deployed server:
 
 
-Open (https://research-l9k7kmtvv-arth21.vercel.app/) in your browser.
+Open (https://research-kappa-swart.vercel.app/) in your browser.
 
 ---
 
