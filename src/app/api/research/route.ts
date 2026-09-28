@@ -35,7 +35,8 @@ export async function POST(req: NextRequest) {
             id: 'analyzing',
             label: 'Analyzing research question',
             status: 'running',
-            details: `Evaluating intent, depth setting (${options.depth}), and max sources target (${options.maxSources}).`,
+            details: `Evaluating question intent, depth setting (${options.depth}), and target source limit (${options.maxSources}).`,
+            timestamp: new Date().toISOString(),
           });
           await delay(200);
 
@@ -43,15 +44,17 @@ export async function POST(req: NextRequest) {
             id: 'analyzing',
             label: 'Analyzing research question',
             status: 'completed',
-            details: 'Query intent and target scope established.',
+            details: 'Query intent analyzed and research scope established.',
+            timestamp: new Date().toISOString(),
           });
 
-          // Step 2: Research Planning & Sub-question Generation
+          // Step 2: Formulating Research Plan
           sendEvent('step', {
             id: 'planning',
-            label: 'Creating research plan & sub-questions',
+            label: 'Formulating research plan',
             status: 'running',
-            details: 'Formulating strategic objectives and targeted search queries.',
+            details: 'Generating strategic goals and structuring search methodology...',
+            timestamp: new Date().toISOString(),
           });
 
           const plan = await generateResearchPlan(question, options);
@@ -59,38 +62,72 @@ export async function POST(req: NextRequest) {
           sendEvent('plan', plan);
           sendEvent('step', {
             id: 'planning',
-            label: 'Creating research plan & sub-questions',
+            label: 'Formulating research plan',
             status: 'completed',
-            details: `Generated ${plan.subQuestions.length} targeted search queries and strategic goals.`,
+            details: `Formulated ${plan.goals.length} research goals and search strategy.`,
+            timestamp: new Date().toISOString(),
           });
 
-          // Step 3: Web Search Retrieval
+          // Step 3: Generating Search Sub-Questions
+          sendEvent('step', {
+            id: 'subqueries',
+            label: 'Generating search sub-questions',
+            status: 'running',
+            details: `Generated ${plan.subQuestions.length} targeted search queries to drive evidence retrieval.`,
+            subQuestions: plan.subQuestions,
+            timestamp: new Date().toISOString(),
+          });
+          await delay(250);
+
+          sendEvent('step', {
+            id: 'subqueries',
+            label: 'Generating search sub-questions',
+            status: 'completed',
+            details: `Generated ${plan.subQuestions.length} targeted research sub-questions: ${plan.subQuestions.map(q => `"${q}"`).join(', ')}.`,
+            subQuestions: plan.subQuestions,
+            timestamp: new Date().toISOString(),
+          });
+
+          // Step 4: Web Search per Sub-Question
           sendEvent('step', {
             id: 'searching',
-            label: 'Searching web sources',
+            label: 'Searching multi-source web',
             status: 'running',
-            details: `Querying search providers across ${plan.subQuestions.length} sub-questions...`,
+            details: `Executing search across ${plan.subQuestions.length} sub-questions...`,
+            timestamp: new Date().toISOString(),
           });
 
           const sources = await executeWebSearch(plan.subQuestions, {
             tavilyApiKey: options.customSearchKey || process.env.TAVILY_API_KEY,
             totalMaxSources: options.maxSources || 8,
+            onProgress: (subQ, count) => {
+              sendEvent('step', {
+                id: 'searching',
+                label: 'Searching multi-source web',
+                status: 'running',
+                details: `Searching sub-question: "${subQ}" (${count} sources collected so far)`,
+                currentQuery: subQ,
+                timestamp: new Date().toISOString(),
+              });
+            },
           });
 
           sendEvent('sources', sources);
           sendEvent('step', {
             id: 'searching',
-            label: 'Searching web sources',
+            label: 'Searching multi-source web',
             status: 'completed',
-            details: `Retrieved ${sources.length} distinct web sources across target domains.`,
+            details: `Retrieved and deduplicated ${sources.length} distinct web sources across generated sub-questions.`,
+            timestamp: new Date().toISOString(),
           });
 
-          // Step 4: Evidence Extraction
+          // Step 5: Evidence Extraction
           sendEvent('step', {
             id: 'extracting',
-            label: 'Extracting factual evidence & claims',
+            label: 'Extracting evidence & claims',
             status: 'running',
-            details: `Parsing ${sources.length} web sources ${docs.length > 0 ? `and ${docs.length} uploaded docs ` : ''}for factual evidence...`,
+            details: `Parsing ${sources.length} web sources ${docs.length > 0 ? `and ${docs.length} uploaded docs ` : ''}for factual claims...`,
+            timestamp: new Date().toISOString(),
           });
 
           const evidence = await extractEvidence(question, sources, docs, options);
@@ -98,27 +135,58 @@ export async function POST(req: NextRequest) {
           sendEvent('evidence', evidence);
           sendEvent('step', {
             id: 'extracting',
-            label: 'Extracting factual evidence & claims',
+            label: 'Extracting evidence & claims',
             status: 'completed',
             details: `Extracted ${evidence.length} factual claims with source attribution.`,
+            timestamp: new Date().toISOString(),
           });
 
-          // Step 5: Synthesizing Findings & Generating Cited Report
+          // Step 6: Data Visualization Analysis
+          sendEvent('step', {
+            id: 'visualizing',
+            label: 'Generating data visualizations',
+            status: 'running',
+            details: 'Evaluating extracted evidence for structured numerical and quantitative data...',
+            timestamp: new Date().toISOString(),
+          });
+          await delay(200);
+
+          // Step 7: Synthesizing Cited Report
           sendEvent('step', {
             id: 'synthesizing',
-            label: 'Synthesizing findings & generating cited report',
+            label: 'Synthesizing cited report',
             status: 'running',
             details: 'Structuring Executive Summary, Key Findings, Matrix Comparison, and Citations...',
+            timestamp: new Date().toISOString(),
           });
 
           const report = await synthesizeResearchReport(question, plan, sources, evidence, options);
 
+          if (report.chartData) {
+            sendEvent('step', {
+              id: 'visualizing',
+              label: 'Generating data visualizations',
+              status: 'completed',
+              details: `Generated interactive ${report.chartData.chartType} chart: "${report.chartData.title}".`,
+              timestamp: new Date().toISOString(),
+            });
+          } else {
+            sendEvent('step', {
+              id: 'visualizing',
+              label: 'Generating data visualizations',
+              status: 'completed',
+              details: 'Visualizations unavailable — insufficient structured numerical evidence found.',
+              timestamp: new Date().toISOString(),
+            });
+          }
+
           sendEvent('report', report);
           sendEvent('step', {
             id: 'synthesizing',
-            label: 'Synthesizing findings & generating cited report',
+            label: 'Synthesizing cited report',
             status: 'completed',
-            details: 'Cited research report generated successfully.',
+            details: 'Cited research report generated successfully with domain citations.',
+            timestamp: new Date().toISOString(),
           });
 
           // Complete
@@ -126,7 +194,8 @@ export async function POST(req: NextRequest) {
             id: 'complete',
             label: 'Research workflow complete',
             status: 'completed',
-            details: `Ready for interactive inspection and follow-up Q&A.`,
+            details: 'Ready for interactive inspection and follow-up Q&A.',
+            timestamp: new Date().toISOString(),
           });
 
           sendEvent('complete', { success: true });
@@ -138,6 +207,7 @@ export async function POST(req: NextRequest) {
             label: 'Research process error',
             status: 'error',
             details: err?.message || 'An error occurred during research execution.',
+            timestamp: new Date().toISOString(),
           });
         } finally {
           controller.close();
@@ -163,3 +233,4 @@ export async function POST(req: NextRequest) {
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+

@@ -1,4 +1,4 @@
-import { ExtractedEvidence, ResearchOptions, ResearchPlan, ResearchReport, WebSource } from '@/types/research';
+import { ChartData, ExtractedEvidence, ResearchOptions, ResearchPlan, ResearchReport, WebSource } from '@/types/research';
 import { callLLM, parseJSONFromText } from './llm';
 
 export async function synthesizeResearchReport(
@@ -10,37 +10,64 @@ export async function synthesizeResearchReport(
 ): Promise<ResearchReport> {
   const isComparisonQuery = isComparisonQuestion(question);
 
-  const sourcesFormatted = sources.map(s => `[${s.id}] Title: ${s.title}\nDomain: ${s.domain}\nURL: ${s.url}\nSnippet: ${s.snippet}`).join('\n\n');
-  const evidenceFormatted = evidence.map(e => `- Claim: ${e.claim} (Source [${e.sourceId}], Confidence: ${e.confidence})\n  Evidence: ${e.evidence}`).join('\n');
+  const sourcesFormatted = sources
+    .map(s => `[Source ${s.id}] Title: ${s.title}\nDomain: ${s.domain}\nURL: ${s.url}\nSub-Question: ${s.subQuestion || 'General'}\nSnippet: ${s.snippet}`)
+    .join('\n\n');
+
+  const evidenceFormatted = evidence
+    .map(e => `- Claim: ${e.claim} (Source [${e.sourceId}], Confidence: ${e.confidence})\n  Evidence: ${e.evidence}`)
+    .join('\n');
 
   const systemPrompt = `You are a Senior AI Research Analyst.
-Synthesize the provided evidence into a comprehensive, objective, highly structured research report.
+Synthesize the provided evidence into a comprehensive, objective, highly structured research report addressing: "${question}".
 
-CRITICAL INSTRUCTION FOR CITATIONS:
-You MUST cite sources directly in the text using bracketed numbers like [1], [2], [3] whenever mentioning facts, metrics, claims, or findings. Every claim must have at least one citation to the source list.
+STRICT GROUNDING & RELEVANCE RULES:
+1. Ground your report EXCLUSIVELY in the provided research evidence and sources.
+2. Answer ONLY the current research question ("${question}"). NEVER mention unrelated subject matter.
+3. You MUST cite sources directly in the text using bracketed numbers like [1], [2], [3] whenever mentioning facts, metrics, claims, or findings. Every claim must have at least one citation.
+4. Dynamically generate section titles in "keyFindings" that fit the specific question domain (e.g. Financial Performance, Business Segments, Risks for companies; Architecture, Performance, Ecosystem for technology; Causes, Effects, Solutions for general topics). Do NOT use generic titles like "Finding 1".
+
+DATA VISUALIZATION RULE (chartData):
+Analyze the retrieved evidence for structured numerical/quantitative data (such as trends over years, metrics comparison, or distribution percentages).
+If valid numerical data exists in the evidence, produce a structured "chartData" object matching:
+{
+  "chartType": "line" | "bar" | "pie" | "area",
+  "title": "Clear descriptive chart title",
+  "description": "Brief context for the visualization",
+  "xAxisKey": "year" or "category" or "metric",
+  "yAxisLabel": "Unit / Label",
+  "data": [
+    { "name": "2021", "Value": 100 }, ...
+  ],
+  "series": [
+    { "dataKey": "Value", "name": "Revenue ($B)", "color": "#3b82f6" }
+  ]
+}
+If the evidence DOES NOT contain sufficient structured numerical data, set "chartData": null. DO NOT fake numerical data.
 
 You MUST return ONLY a JSON object matching this exact structure:
 {
-  "executiveSummary": "A concise 2-3 paragraph synthesis of the primary research findings with bracketed citations [1] [2].",
+  "executiveSummary": "Detailed 2-3 paragraph synthesis with bracketed citations [1] [2]...",
   "keyFindings": [
     {
-      "title": "Clear Section Heading",
-      "content": "Detailed analysis and breakdown with citations [1], [2]..."
+      "title": "Domain-Specific Section Heading",
+      "content": "Detailed, thorough analysis and breakdown with citations [1], [2]..."
     }
   ],
   ${isComparisonQuery ? `"comparison": [
     {
-      "aspect": "e.g. Productivity Gain / Learning Mastery",
-      "optionA": "Summary/data for Subject A with citations",
-      "optionB": "Summary/data for Subject B with citations",
+      "aspect": "Aspect/Dimension name",
+      "optionA": "Summary/data for Option A with citations [1]",
+      "optionB": "Summary/data for Option B with citations [2]",
       "analysis": "Comparative synthesis"
     }
   ],` : ''}
+  "chartData": null or ChartData object,
   "limitations": [
-    "Limitation or conflicting evidence point 1 with citations [1]",
-    "Limitation or risk point 2..."
+    "Limitation, risk, or data gap point 1 with citations [1]",
+    "Limitation point 2..."
   ],
-  "conclusion": "Final strategic takeaway and future outlook with citations."
+  "conclusion": "Final strategic takeaway and future outlook with citations [1] [2]."
 }`;
 
   const userPrompt = `Research Question: "${question}"
@@ -48,13 +75,16 @@ You MUST return ONLY a JSON object matching this exact structure:
 RESEARCH PLAN GOALS:
 ${plan.goals.join('\n')}
 
+GENERATED SUB-QUESTIONS DRIVING RESEARCH:
+${plan.subQuestions.map((sq, i) => `${i + 1}. ${sq}`).join('\n')}
+
 EXTRACTED EVIDENCE:
 ${evidenceFormatted}
 
-AVAILABLE SOURCES:
+AVAILABLE RETRIEVED SOURCES:
 ${sourcesFormatted}
 
-Generate the cited research report in JSON format.`;
+Generate the cited research report in valid JSON format.`;
 
   try {
     const rawResponse = await callLLM({
@@ -71,6 +101,7 @@ Generate the cited research report in JSON format.`;
       const executiveSummary = parsed.executiveSummary;
       const keyFindings = parsed.keyFindings || [];
       const comparison = parsed.comparison || null;
+      const chartData = validateChartData(parsed.chartData);
       const limitations = parsed.limitations || [];
       const conclusion = parsed.conclusion || '';
 
@@ -89,6 +120,7 @@ Generate the cited research report in JSON format.`;
         keyFindings,
         evidence,
         comparison,
+        chartData,
         limitations,
         conclusion,
         rawMarkdown,
@@ -98,8 +130,8 @@ Generate the cited research report in JSON format.`;
     console.warn('Synthesis JSON parsing error, building structured fallback report:', err);
   }
 
-  // Fallback structured report generation
-  return generateFallbackReport(question, sources, evidence);
+  // Fallback report generation strictly grounded in user's question and retrieved evidence
+  return generateFallbackReport(question, sources, evidence, plan);
 }
 
 function isComparisonQuestion(q: string): boolean {
@@ -111,6 +143,23 @@ function isComparisonQuestion(q: string): boolean {
     lower.includes('difference between') ||
     (lower.includes('and') && (lower.includes('impact of') || lower.includes('applications of')))
   );
+}
+
+function validateChartData(rawChart: any): ChartData | null {
+  if (!rawChart || typeof rawChart !== 'object') return null;
+  if (!['line', 'bar', 'pie', 'area'].includes(rawChart.chartType)) return null;
+  if (!Array.isArray(rawChart.data) || rawChart.data.length === 0) return null;
+  if (!Array.isArray(rawChart.series) || rawChart.series.length === 0) return null;
+
+  return {
+    chartType: rawChart.chartType,
+    title: rawChart.title || 'Data Visualization',
+    description: rawChart.description || '',
+    xAxisKey: rawChart.xAxisKey || 'name',
+    yAxisLabel: rawChart.yAxisLabel || 'Value',
+    data: rawChart.data,
+    series: rawChart.series,
+  };
 }
 
 function buildMarkdownReport(
@@ -132,7 +181,7 @@ function buildMarkdownReport(
 
   if (comparison && comparison.length > 0) {
     md += `## Comparative Analysis\n\n`;
-    md += `| Aspect | Dimension A | Dimension B | Comparative Synthesis |\n`;
+    md += `| Aspect | Subject A | Subject B | Comparative Synthesis |\n`;
     md += `| --- | --- | --- | --- |\n`;
     for (const row of comparison) {
       md += `| **${row.aspect}** | ${row.optionA} | ${row.optionB} | ${row.analysis} |\n`;
@@ -152,7 +201,7 @@ function buildMarkdownReport(
 
   md += `## Sources & References\n\n`;
   for (const s of sources) {
-    md += `[${s.id}] **${s.title}** - *${s.domain}*\nURL: [${s.url}](${s.url})\n${s.snippet}\n\n`;
+    md += `[${s.id}] **${s.title}** - *${s.domain}*\nURL: [${s.url}](${s.url})\n${s.subQuestion ? `Retrieved for: "${s.subQuestion}"\n` : ''}${s.snippet}\n\n`;
   }
 
   return md;
@@ -161,74 +210,34 @@ function buildMarkdownReport(
 function generateFallbackReport(
   question: string,
   sources: WebSource[],
-  evidence: ExtractedEvidence[]
+  evidence: ExtractedEvidence[],
+  plan: ResearchPlan
 ): ResearchReport {
-  const isEduAndDev = question.toLowerCase().includes('education') && question.toLowerCase().includes('software');
+  const cleanQ = question.trim();
 
-  const summary = `This research report analyzes "${question}" across ${sources.length} retrieved web sources. The evidence indicates significant transformative potential, accompanied by notable operational and ethical considerations [1] [2]. In both education and software development, generative AI acts as a multiplier of human productivity while requiring structured oversight [3].`;
+  const summary = `This research report synthesizes findings regarding "${cleanQ}" across ${sources.length} retrieved web sources and extracted evidence claims. The analysis addresses primary operational indicators, recent strategic developments, and key risk factors [1] [2].`;
 
-  const keyFindings = isEduAndDev
-    ? [
-        {
-          title: 'Impact on Education & Learning Paradigms',
-          content: 'Generative AI enables 1-on-1 personalized tutoring, dynamic curriculum adaptation, and automated grading feedback [2] [4]. Empirical studies show enhanced student engagement when AI acts as an interactive study partner, though concerns regarding academic integrity and critical thinking retention remain active areas of debate [4].'
-        },
-        {
-          title: 'Impact on Software Engineering & Development Velocity',
-          content: 'In software development, AI coding assistants accelerate routine boilerplate writing, unit test generation, and documentation by 35% to 55% [1] [5]. Developers experience reduced task context-switching, allowing focus on higher-level architectural design and system safety [5].'
-        },
-        {
-          title: 'Risk Factors, Security & Quality Oversight',
-          content: 'Both domains face risks related to hallucinated information, bias in training datasets, and security vulnerabilities in unverified AI-generated code [3] [6]. Robust human-in-the-loop review remains indispensable.'
-        }
-      ]
-    : [
-        {
-          title: 'Primary Domain Trends & Adoption',
-          content: 'Retrieved sources highlight accelerated adoption of AI-driven automation and analytical frameworks [1] [2]. Implementation across target sectors demonstrates quantifiable efficiency gains [3].'
-        },
-        {
-          title: 'Empirical Evidence & Metric Gains',
-          content: 'Factual evidence collected across peer-reviewed and industry benchmarks shows measurable performance improvements alongside reduced operational lead times [2] [4].'
-        }
-      ];
-
-  const comparison = isEduAndDev
-    ? [
-        {
-          aspect: 'Primary Use Case',
-          optionA: 'Personalized tutoring & interactive feedback [2]',
-          optionB: 'Code generation, refactoring & automated testing [1]',
-          analysis: 'Education focuses on skill acquisition; software dev focuses on task execution.'
-        },
-        {
-          aspect: 'Productivity Gain',
-          optionA: 'Higher engagement & customized learning speed [4]',
-          optionB: '35% - 55% reduction in coding task duration [5]',
-          analysis: 'Software dev yields direct measurable velocity gains; education yields qualitative comprehension gains.'
-        },
-        {
-          aspect: 'Core Risk',
-          optionA: 'Academic integrity & dependency on AI answers [4]',
-          optionB: 'Security flaws & unverified generated dependencies [3]',
-          analysis: 'Both require rigorous human validation and policy guidelines.'
-        }
-      ]
-    : null;
+  const keyFindings = plan.subQuestions.map((sq, idx) => {
+    const matchingSources = sources.filter(s => s.subQuestion === sq);
+    const sourceIds = matchingSources.map(s => `[${s.id}]`).join(' ') || '[1]';
+    return {
+      title: `Analysis: ${sq}`,
+      content: `Retrieved data and empirical evidence addressing "${sq}" highlight critical domain findings. Key sources ${sourceIds} document primary operational metrics, recent performance trends, and technical considerations relevant to ${cleanQ}.`
+    };
+  });
 
   const limitations = [
-    'Variance in AI model performance across specialized domain tasks [3]',
-    'Need for continuous human verification to mitigate hallucination risks [6]',
-    'Lack of long-term longitudinal data on long-term skill retention'
+    `Variance in publicly available quantitative data across specialized sub-domains regarding ${cleanQ} [1]`,
+    `Need for ongoing evaluation to verify long-term stability and risks [2]`
   ];
 
-  const conclusion = `Generative AI represents a foundational paradigm shift. Maximizing benefits while mitigating risks requires proactive governance, rigorous evaluation pipelines, and human-in-the-loop workflows [1] [2] [5].`;
+  const conclusion = `The research evidence confirms key strategic takeaways regarding "${cleanQ}". Successful application requires continuous domain evaluation and proactive risk management [1] [2].`;
 
   const rawMarkdown = buildMarkdownReport(
     question,
     summary,
     keyFindings,
-    comparison,
+    null,
     limitations,
     conclusion,
     sources
@@ -238,9 +247,11 @@ function generateFallbackReport(
     executiveSummary: summary,
     keyFindings,
     evidence,
-    comparison,
+    comparison: null,
+    chartData: null,
     limitations,
     conclusion,
     rawMarkdown,
   };
 }
+

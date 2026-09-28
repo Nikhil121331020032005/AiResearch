@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { CheckCircle2, Circle, Loader2, AlertCircle, Cpu, Database, Search, FileCheck, Network, Layers } from 'lucide-react';
+import { CheckCircle2, Circle, Loader2, AlertCircle, Cpu, Database, Search, FileCheck, Network, Layers, BarChart3, HelpCircle } from 'lucide-react';
 import { AgentStep, AgentStepId, StepStatus, WebSource } from '@/types/research';
 
 interface SidebarRightProps {
@@ -19,6 +19,7 @@ const STEP_ORDER: { id: AgentStepId; label: string; icon: any }[] = [
   { id: 'subqueries', label: 'Generating search sub-questions', icon: Network },
   { id: 'searching', label: 'Searching multi-source web', icon: Search },
   { id: 'extracting', label: 'Extracting evidence & claims', icon: Database },
+  { id: 'visualizing', label: 'Generating data visualizations', icon: BarChart3 },
   { id: 'synthesizing', label: 'Synthesizing cited report', icon: FileCheck },
 ];
 
@@ -30,21 +31,23 @@ export const SidebarRight: React.FC<SidebarRightProps> = ({
   error,
   onSelectSource,
 }) => {
-  // Map step status
-  const getStepStatus = (stepId: AgentStepId): StepStatus => {
-    const found = steps.find((s) => s.id === stepId);
-    if (found) return found.status;
-    return 'pending';
+  const getStep = (stepId: AgentStepId): AgentStep | undefined => {
+    return steps.find((s) => s.id === stepId);
   };
 
-  const getStepDetails = (stepId: AgentStepId): string | undefined => {
-    const found = steps.find((s) => s.id === stepId);
-    return found?.details;
+  const getStepStatus = (stepId: AgentStepId): StepStatus => {
+    const found = getStep(stepId);
+    if (found) return found.status;
+    return 'pending';
   };
 
   const completedCount = steps.filter((s) => s.status === 'completed').length;
   const totalSteps = STEP_ORDER.length;
   const progressPercent = Math.min(100, Math.round((completedCount / totalSteps) * 100));
+
+  // Extract sub-questions if available from subqueries or planning step
+  const subqueriesStep = getStep('subqueries');
+  const activeSubQuestions = subqueriesStep?.subQuestions || [];
 
   return (
     <aside className="w-80 bg-slate-900 border-l border-slate-800 text-slate-200 flex flex-col h-screen select-none shrink-0">
@@ -80,8 +83,9 @@ export const SidebarRight: React.FC<SidebarRightProps> = ({
         </div>
 
         {STEP_ORDER.map((item) => {
-          const status = getStepStatus(item.id);
-          const details = getStepDetails(item.id);
+          const stepObj = getStep(item.id);
+          const status = stepObj?.status || 'pending';
+          const details = stepObj?.details;
           const StepIcon = item.icon;
 
           return (
@@ -124,6 +128,24 @@ export const SidebarRight: React.FC<SidebarRightProps> = ({
                     <p className="text-[11px] text-slate-400 mt-1 leading-snug break-words">
                       {details}
                     </p>
+                  )}
+
+                  {/* Render Sub-questions list if this is the subqueries step */}
+                  {item.id === 'subqueries' && activeSubQuestions.length > 0 && (
+                    <div className="mt-2 space-y-1.5 pt-2 border-t border-slate-800/80">
+                      <span className="text-[10px] font-semibold text-blue-400 uppercase tracking-wider block">
+                        Generated {activeSubQuestions.length} Sub-Questions:
+                      </span>
+                      {activeSubQuestions.map((q, idx) => (
+                        <div
+                          key={idx}
+                          className="flex items-start gap-1.5 text-[11px] text-slate-300 bg-slate-900/80 p-1.5 rounded border border-slate-800"
+                        >
+                          <span className="font-mono text-blue-400 font-bold shrink-0">{idx + 1}.</span>
+                          <span className="leading-tight">{q}</span>
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
               </div>
@@ -170,13 +192,20 @@ export const SidebarRight: React.FC<SidebarRightProps> = ({
                 <div
                   key={s.id}
                   onClick={() => onSelectSource && onSelectSource(s)}
-                  className="p-2 rounded bg-slate-800/40 border border-slate-800 hover:border-blue-500/50 hover:bg-slate-800 cursor-pointer transition-colors text-xs flex items-center justify-between"
+                  className="p-2 rounded bg-slate-800/40 border border-slate-800 hover:border-blue-500/50 hover:bg-slate-800 cursor-pointer transition-colors text-xs space-y-1"
                 >
-                  <div className="truncate pr-2">
-                    <span className="font-semibold text-blue-300 mr-1 shadow-sm">[{s.id}]</span>
-                    <span className="text-slate-300 truncate">{s.title}</span>
+                  <div className="flex items-center justify-between">
+                    <div className="truncate pr-2">
+                      <span className="font-semibold text-blue-300 mr-1 shadow-sm">[{s.id}]</span>
+                      <span className="text-slate-300 truncate font-medium">{s.title}</span>
+                    </div>
+                    <span className="text-[10px] text-slate-500 shrink-0 font-mono">{s.domain}</span>
                   </div>
-                  <span className="text-[10px] text-slate-500 shrink-0 font-mono">{s.domain}</span>
+                  {s.subQuestion && (
+                    <div className="text-[10px] text-blue-400/90 italic truncate">
+                      Sub-Q: "{s.subQuestion}"
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -186,3 +215,4 @@ export const SidebarRight: React.FC<SidebarRightProps> = ({
     </aside>
   );
 };
+

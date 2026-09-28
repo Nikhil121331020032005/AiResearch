@@ -13,18 +13,20 @@ You must output ONLY valid JSON matching this exact structure:
 {
   "goals": [
     "Goal 1 description",
-    "Goal 2 description",
-    ...
+    "Goal 2 description"
   ],
   "subQuestions": [
     "Search query 1",
-    "Search query 2",
-    ...
+    "Search query 2"
   ],
   "searchStrategy": "High-level description of what evidence to prioritize."
 }
 
-Generate exactly ${queryCount} focused, specific search sub-questions. Each sub-question will be used directly as a web search query. Make them search-engine friendly, objective, and targeted.`;
+Generate exactly ${queryCount} focused, specific search sub-questions.
+IMPORTANT RULES FOR SUB-QUESTIONS:
+1. Each sub-question MUST directly address a specific aspect of "${question}".
+2. Make them search-engine friendly, objective, factual, and targeted.
+3. NEVER generate generic filler queries unrelated to the subject.`;
 
   const userPrompt = `Research Request: "${question}"
 Research Depth: ${options.depth}
@@ -48,21 +50,58 @@ Generate the strategic research plan and targeted search sub-questions in valid 
     console.warn('Error parsing LLM research plan, using heuristic planner fallback:', err);
   }
 
-  // Robust fallback plan if parsing fails
+  // Dynamic fallback plan tailored specifically to the user's question
+  const cleanQ = question.trim();
+  const lowerQ = cleanQ.toLowerCase();
+
+  let dynamicSubQuestions: string[] = [];
+  let dynamicGoals: string[] = [];
+
+  if (lowerQ.includes('stock') || lowerQ.includes('reliance') || lowerQ.includes('company') || lowerQ.includes('financial')) {
+    dynamicGoals = [
+      `Examine core business segments and operational overview of ${cleanQ}`,
+      `Analyze recent financial performance, revenue, earnings, and market valuation`,
+      `Evaluate strategic initiatives, recent developments, and competitive positioning`,
+      `Identify primary growth drivers, stock valuation metrics, and key risk factors`
+    ];
+    dynamicSubQuestions = [
+      `${cleanQ} company overview and major business segments`,
+      `${cleanQ} recent financial results revenue earnings growth`,
+      `${cleanQ} strategic developments investments and market news`,
+      `${cleanQ} stock growth outlook valuation and key risks`
+    ];
+  } else if (lowerQ.includes('vs') || lowerQ.includes('compare') || lowerQ.includes('difference')) {
+    dynamicGoals = [
+      `Analyze core architecture and fundamental design differences for ${cleanQ}`,
+      `Evaluate performance benchmarks, efficiency, and resource utilization`,
+      `Compare developer experience, ecosystem support, and community adoption`,
+      `Formulate decision framework and optimal use cases for each option`
+    ];
+    dynamicSubQuestions = [
+      `${cleanQ} key differences architecture and design`,
+      `${cleanQ} performance benchmarks and speed comparison`,
+      `${cleanQ} developer experience ecosystem and community adoption`,
+      `${cleanQ} use cases pros cons comparison`
+    ];
+  } else {
+    dynamicGoals = [
+      `Analyze foundational concepts, mechanisms, and background regarding: ${cleanQ}`,
+      `Gather empirical data, authoritative statistics, and key benchmarks`,
+      `Examine primary benefits, practical applications, and recent developments`,
+      `Identify major limitations, risks, and strategic implications`
+    ];
+    dynamicSubQuestions = [
+      `${cleanQ} overview main concepts and mechanisms`,
+      `${cleanQ} empirical evidence statistics and recent data`,
+      `${cleanQ} key developments benefits and practical applications`,
+      `${cleanQ} major risks limitations and future outlook`
+    ];
+  }
+
   return {
-    goals: [
-      `Analyze core concepts and primary applications regarding: ${question}`,
-      'Retrieve empirical evidence, statistics, and domain benchmarks',
-      'Identify key benefits, performance metrics, and operational advantages',
-      'Examine risks, security/privacy concerns, and current limitations',
-      'Synthesize findings across sources with citations'
-    ],
-    subQuestions: [
-      `${question} main applications and benefits`,
-      `${question} risks limitations and challenges`,
-      `${question} empirical studies research benchmarks`,
-      `${question} future outlook and comparative analysis`
-    ].slice(0, queryCount),
-    searchStrategy: 'Retrieve balanced evidence across peer-reviewed, industry, and authoritative web sources.'
+    goals: dynamicGoals,
+    subQuestions: dynamicSubQuestions.slice(0, queryCount),
+    searchStrategy: `Retrieve targeted, empirical evidence specifically addressing "${cleanQ}".`
   };
 }
+

@@ -15,6 +15,7 @@ export type AgentStepId =
   | 'subqueries'
   | 'searching'
   | 'extracting'
+  | 'visualizing'
   | 'synthesizing'
   | 'complete'
   | 'error';
@@ -24,6 +25,8 @@ export interface AgentStep {
   label: string;
   status: StepStatus;
   details?: string;
+  subQuestions?: string[];
+  currentQuery?: string;
   timestamp: string;
 }
 
@@ -36,6 +39,7 @@ export interface WebSource {
   fullContent?: string;
   relevanceScore?: number;
   whyRelevant?: string;
+  subQuestion?: string;
 }
 
 export interface ExtractedEvidence {
@@ -53,6 +57,22 @@ export interface ComparisonRow {
   analysis: string;
 }
 
+export interface ChartSeries {
+  dataKey: string;
+  name: string;
+  color?: string;
+}
+
+export interface ChartData {
+  chartType: 'line' | 'bar' | 'pie' | 'area';
+  title: string;
+  description?: string;
+  xAxisKey?: string;
+  yAxisLabel?: string;
+  data: Record<string, any>[];
+  series: ChartSeries[];
+}
+
 export interface ResearchReport {
   executiveSummary: string;
   keyFindings: {
@@ -61,6 +81,7 @@ export interface ResearchReport {
   }[];
   evidence: ExtractedEvidence[];
   comparison?: ComparisonRow[] | null;
+  chartData?: ChartData | null;
   limitations: string[];
   conclusion: string;
   rawMarkdown: string;
@@ -104,6 +125,7 @@ export interface ResearchSession {
 }
 
 export interface SSEMessage {
-  type: 'step' | 'plan' | 'sources' | 'evidence' | 'report' | 'complete' | 'error';
+  type: 'step' | 'plan' | 'subquestions' | 'sources' | 'evidence' | 'report' | 'complete' | 'error';
   data: any;
 }
+

@@ -54,14 +54,17 @@ export default function HomePage() {
     }
   }, []);
 
-  // Save sessions to localStorage when updated
-  const saveSessionsToStorage = (updatedSessions: ResearchSession[]) => {
-    setSessions(updatedSessions);
-    try {
-      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updatedSessions));
-    } catch (e) {
-      console.warn('Failed to save sessions to localStorage:', e);
-    }
+  // Save sessions helper
+  const updateSessionsStateAndStorage = (updater: (prev: ResearchSession[]) => ResearchSession[]) => {
+    setSessions((prev) => {
+      const updated = updater(prev);
+      try {
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updated));
+      } catch (e) {
+        console.warn('Failed to save sessions to localStorage:', e);
+      }
+      return updated;
+    });
   };
 
   const activeSession = sessions.find((s) => s.id === activeSessionId) || null;
@@ -98,9 +101,8 @@ export default function HomePage() {
     setCurrentEvidence([]);
     setCurrentReport(null);
 
-    // Save initial session
-    const updatedSessions = [newSession, ...sessions];
-    saveSessionsToStorage(updatedSessions);
+    // Save initial session draft
+    updateSessionsStateAndStorage((prev) => [newSession, ...prev]);
 
     try {
       const response = await fetch('/api/research', {
@@ -173,11 +175,9 @@ export default function HomePage() {
         report: accumReport,
       };
 
-      const finalSessions = sessions.map((s) => (s.id === sessionId ? finalizedSession : s));
-      if (!finalSessions.some((s) => s.id === sessionId)) {
-        finalSessions.unshift(finalizedSession);
-      }
-      saveSessionsToStorage(finalSessions);
+      updateSessionsStateAndStorage((prev) =>
+        prev.map((s) => (s.id === sessionId ? finalizedSession : s))
+      );
     } catch (error: any) {
       console.error('Error running research:', error);
       const errStep: AgentStep = {
@@ -220,7 +220,9 @@ export default function HomePage() {
 
     const updatedFollowUps = [...sessionToUpdate.followUps, userMsg];
     const sessionWithUserMsg = { ...sessionToUpdate, followUps: updatedFollowUps };
-    saveSessionsToStorage(sessions.map((s) => (s.id === activeSessionId ? sessionWithUserMsg : s)));
+    updateSessionsStateAndStorage((prev) =>
+      prev.map((s) => (s.id === activeSessionId ? sessionWithUserMsg : s))
+    );
 
     setIsFollowUpLoading(true);
 
@@ -257,7 +259,9 @@ export default function HomePage() {
           followUps: [...updatedFollowUps, assistantMsg],
         };
 
-        saveSessionsToStorage(sessions.map((s) => (s.id === activeSessionId ? finalSession : s)));
+        updateSessionsStateAndStorage((prev) =>
+          prev.map((s) => (s.id === activeSessionId ? finalSession : s))
+        );
         if (data.newSources) {
           setCurrentSources(updatedSources);
         }
@@ -272,8 +276,7 @@ export default function HomePage() {
   // Delete session
   const handleDeleteSession = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    const filtered = sessions.filter((s) => s.id !== id);
-    saveSessionsToStorage(filtered);
+    updateSessionsStateAndStorage((prev) => prev.filter((s) => s.id !== id));
     if (activeSessionId === id) {
       setActiveSessionId(null);
     }
@@ -362,3 +365,4 @@ export default function HomePage() {
     </div>
   );
 }
+
